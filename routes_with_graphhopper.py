@@ -17,13 +17,13 @@ Das Skript fragt für jedes Paar die Routing-API ab, speichert die Ergebnisse al
 
 GH_LOCAL = "http://localhost:8989"
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
-OUT_DIR  = ROOT / "outputs"
+ROOT = Path(__file__).resolve().parent
+DATA_DIR = ROOT
+OUT_DIR = ROOT / "outputs"
 OUT_DIR.mkdir(exist_ok=True)
 
 # Dateien laden/speichern
-IN_PATH = DATA_DIR / "od_paare_locations.csv"
+IN_PATH = DATA_DIR / "od_paare_locations_no_loops.csv"
 OUT_GEOJSON = OUT_DIR / "all_routes_graphhopper_local.geojson"
 OUT_HTML    = OUT_DIR / "all_routes_graphhopper_local.html"
 
@@ -70,6 +70,7 @@ def gh_route_geojson_feature(session, start_latlon, end_latlon, count, profile=P
         "point": [f"{s_lat},{s_lon}", f"{e_lat},{e_lon}"], # Graphhopper erwartet /route?point=lat1,lon1&point=lat2,lon2
         "profile": profile, # bike Profil 
         "points_encoded": "false", # geojson Rückgabe
+        "snap_preventions": ["bridge","tunnel","ferry","ford"], # verhindert Snapping auf problematische Infrastruktur
     }
 
     # GET http://localhost:8989/route?...
@@ -82,6 +83,15 @@ def gh_route_geojson_feature(session, start_latlon, end_latlon, count, profile=P
     path = data["paths"][0] 
     coords_lonlat = path["points"]["coordinates"] # [lon, lat]
 
+    # Tatsächlich gesnappte Start-/Endpunkte von Graphhopper
+    snapped = path.get("snapped_waypoints")
+    snapped_coords = []
+
+    if isinstance(snapped, dict):
+        snapped_coords = snapped.get("coordinates", []) or []
+
+    snap_start = snapped_coords[0] if len(snapped_coords) >= 1 else None
+    snap_end   = snapped_coords[1] if len(snapped_coords) >= 2 else None
 
     return {
         "type": "Feature",
@@ -92,8 +102,21 @@ def gh_route_geojson_feature(session, start_latlon, end_latlon, count, profile=P
             "duration_s": float(path["time"]) / 1000.0, # Dauer
             "engine": "graphhopper-local",
             "profile": profile,
+
+            # Originalpunkte
+            "input_start_lat": float(s_lat),
+            "input_start_lon": float(s_lon),
+            "input_end_lat": float(e_lat),
+            "input_end_lon": float(e_lon),
+
+            # Gesnappte Punkte
+            "snapped_start_lon": None if snap_start is None else float(snap_start[0]),
+            "snapped_start_lat": None if snap_start is None else float(snap_start[1]),
+            "snapped_end_lon": None if snap_end is None else float(snap_end[0]),
+            "snapped_end_lat": None if snap_end is None else float(snap_end[1]),
         },
     }
+
 
 # Liste von geojson Features als FeatureCollection
 def save_geojson(features, out_path): 
@@ -109,25 +132,15 @@ def main():
     Der Fortschritt wird alle 50 erfolgreich gelesenen Pfade angegeben, eine Aussicht für noch verbleibende Dauer wird berechnent.
     Der Output ist eine geojson Datei der Form
     {
-  "type": "Feature",
-  "geometry": {
-    "type": "LineString",
-    "coordinates": [
-      [8.46612, 49.48701],
-      [8.46598, 49.48672],
-      ...
-    ]
-  },
-  "properties": {
-    "count": 3817,
-    "distance_m": 1240.3,
-    "duration_s": 312.5,
-    "engine": "graphhopper-local",
-    "profile": "bike",
-    "rank": 1
-        }
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [...]
+      },
+      "properties": {...}
     }
     """
+
     df = pd.read_csv(IN_PATH)
 
     required = {"start_lat", "start_lon", "end_lat", "end_lon", "count"}
@@ -136,10 +149,26 @@ def main():
     if missing:
         raise ValueError(f"Fehlende Spalten in CSV: {missing}. Vorhanden: {list(df.columns)}")
 
+    # -------------------------
+    # Datenbereinigung
+    # -------------------------
+
+    # Koordinaten numerisch machen
+    for c in ["start_lat","start_lon","end_lat","end_lon","count"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Zeilen mit fehlenden Koordinaten entfernen
+    df = df.dropna(subset=["start_lat","start_lon","end_lat","end_lon","count"])
+
+    # Paare entfernen bei denen Start = Ende
+    loops = (df["start_lat"] == df["end_lat"]) & (df["start_lon"] == df["end_lon"])
+    print("Loops entfernt:", int(loops.sum()))
+    df = df[~loops].copy()
+
     # Sortieren nach Häufigkeit der Routen (falls nur die ersten N relevant)
     df = df.sort_values("count", ascending=False).reset_index(drop=True)
 
-    # Beginne Sessin
+    # Beginne Session
     session = make_session()
 
     features = []
@@ -151,7 +180,7 @@ def main():
         e = (float(row["end_lat"]), float(row["end_lon"]))
         c = int(row["count"])
 
-        # feat als geojson FeatureProfile
+        # feat als geojson Feature
         try:
             feat = gh_route_geojson_feature(session, s, e, c, profile=PROFILE)
             feat["properties"]["rank"] = i + 1
@@ -228,5 +257,5 @@ docker run --rm -p 8989:8989 -p 8990:8990 `
   -lc "java -Ddw.graphhopper.datareader.file=/data/region.osm.pbf -Ddw.graphhopper.graph.location=/data/graph-cache -jar *.jar server /data/config.yml"
 
 Code für Powershell, um Docker Umgebung zu beenden:
-  docker stop $(docker ps -q)
+docker stop $(docker ps -q)
 """
