@@ -1,45 +1,42 @@
 """
-Erzeugt OD-Paare aus touren_Nextbike.csv mit Häufigkeit (count).
+Erzeugt OD-Paare aus touren_Nextbike.csv mit Häufigkeit
 
 Optionen:
-- directed=True  -> gerichtete OD-Paare (A -> B ≠ B -> A)
-- directed=False -> ungerichtete Paare (A-B = B-A)
+- directed=True  -> gerichtete OD-Paare
+- directed=False -> ungerichtete OD-Paare
 
 Features:
 - problematische StationsIDs können ausgeschlossen werden
-- Sortierung nach StationsID
-- Ausgabe enthält count der jeweiligen Route
+- Fahrten von einer Station zu sich selbst werden ausgeschlossen
+- Sortierung nach count
+- Ausgabe: od_paare_gerichtet.csv oder od_paare_ungerichtet.csv
 """
 
 import pandas as pd
 from pathlib import Path
+import numpy as np
 
-# --------------------------------------------------
-# Einstellungen
-# --------------------------------------------------
 IN_PATH = Path("touren_Nextbike.csv")
-OUT_PATH = Path("od_paare.csv")
 
-directed = True        # False = ungerichtete Paare
-remove_loops = True    # Start = Ende entfernen
+# False -> ungerichtet, True -> gerichtet
+directed = False
 
+# Fahrten mit Start=Ziel entfernt
+exclude_same_station_routes = True
+
+# StationsIDs mit Problemen entfernen
 bad_ids = [-1, 29111804, 556920840, 95252421, 378595862]
 
+OUT_PATH = Path("od_paare_gerichtet.csv" if directed else "od_paare_ungerichtet.csv")
 
-# --------------------------------------------------
-# Daten laden
-# --------------------------------------------------
 df = pd.read_csv(IN_PATH)
 
-# problematische StationsIDs entfernen
 df = df[
     ~df["AusleihstationID"].isin(bad_ids) &
     ~df["RueckgabestationID"].isin(bad_ids)
 ].copy()
 
-# --------------------------------------------------
-# OD-Paare erzeugen
-# --------------------------------------------------
+# Start und Ziel mit Koordinaten extrahieren
 od = df[[
     "AusleihstationID",
     "RueckgabestationID",
@@ -50,51 +47,47 @@ od = df[[
 ]].rename(columns={
     "AusleihstationID": "start_id",
     "RueckgabestationID": "end_id"
-})
+}).copy()
 
-# --------------------------------------------------
-# Ungerichtete Paare
-# --------------------------------------------------
+# Start=Ziel als Route entfernen
+if exclude_same_station_routes:
+    od = od[od["start_id"] != od["end_id"]].copy()
+
+# Für ungerichtete Paare kleinere ID immer nach vorne setzen
 if not directed:
-    od["a"] = od[["start_id", "end_id"]].min(axis=1)
-    od["b"] = od[["start_id", "end_id"]].max(axis=1)
+    swap_mask = od["start_id"] > od["end_id"]
 
-    od = od.assign(
-        start_id=od["a"],
-        end_id=od["b"]
-    ).drop(columns=["a", "b"])
+    new_start_id = np.where(swap_mask, od["end_id"], od["start_id"])
+    new_end_id   = np.where(swap_mask, od["start_id"], od["end_id"])
 
-# --------------------------------------------------
-# Loops entfernen
-# --------------------------------------------------
-if remove_loops:
-    od = od[od["start_id"] != od["end_id"]]
+    new_start_lat = np.where(swap_mask, od["end_lat"], od["start_lat"])
+    new_start_lon = np.where(swap_mask, od["end_lon"], od["start_lon"])
+    new_end_lat   = np.where(swap_mask, od["start_lat"], od["end_lat"])
+    new_end_lon   = np.where(swap_mask, od["start_lon"], od["end_lon"])
 
-# --------------------------------------------------
-# Aggregation (count)
-# --------------------------------------------------
+    od["start_id"] = new_start_id
+    od["end_id"] = new_end_id
+    od["start_lat"] = new_start_lat
+    od["start_lon"] = new_start_lon
+    od["end_lat"] = new_end_lat
+    od["end_lon"] = new_end_lon
+
+# Gruppiert alle Fahrten mit gleichem Start und Ziel mit Häufigkeit
 od_pairs = (
-    od.groupby([
-        "start_id",
-        "end_id",
-        "start_lat",
-        "start_lon",
-        "end_lat",
-        "end_lon"
-    ])
+    od.groupby(
+        ["start_id", "end_id", "start_lat", "start_lon", "end_lat", "end_lon"],
+        dropna=False
+    )
     .size()
     .reset_index(name="count")
 )
 
-# --------------------------------------------------
-# Sortierung nach StationsID
-# --------------------------------------------------
-od_pairs = od_pairs.sort_values(["start_id", "end_id"])
+# Häufigste Routen zuerst
+od_pairs = od_pairs.sort_values("count", ascending=False).reset_index(drop=True)
 
-# --------------------------------------------------
-# speichern
-# --------------------------------------------------
+# OD-Paare als CSV-Datei speichern
 od_pairs.to_csv(OUT_PATH, index=False)
 
 print("OD-Paare:", len(od_pairs))
 print("Gespeichert:", OUT_PATH)
+#print(od_pairs.head(20))
