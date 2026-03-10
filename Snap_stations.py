@@ -5,8 +5,8 @@ from pathlib import Path
 
 GH_LOCAL = "http://localhost:8989"
 
-IN_PATH = Path(r"C:\Users\kilia\OneDrive\Dokumente\Uni Mannheim\FSS 2026\Seminar Modellierung und Simulation\mannheim_bike\od_paare_locations.csv")
-OUT_STATIONS = Path(r"C:\Users\kilia\OneDrive\Dokumente\Uni Mannheim\FSS 2026\Seminar Modellierung und Simulation\mannheim_bike\stations_snapped.csv")
+IN_PATH = Path("od_paare_ungerichtet.csv")
+OUT_STATIONS = Path("stations_snapped.csv")
 
 SLEEP_BETWEEN_REQUESTS = 0.01
 
@@ -77,7 +77,7 @@ for i, row in stations.iterrows():
     if SLEEP_BETWEEN_REQUESTS > 0:
         time.sleep(SLEEP_BETWEEN_REQUESTS)
 
-    if (i + 1) % 50 == 0 or (i + 1) == len(stations):
+    if (i + 1) % 5 == 0 or (i + 1) == len(stations):
         print(f"[{i+1}/{len(stations)}]")
 
 stations["snap_lat"] = snap_lats
