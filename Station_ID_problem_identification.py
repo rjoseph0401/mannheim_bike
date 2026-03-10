@@ -28,7 +28,7 @@ IN_PATH = Path("touren_Nextbike.csv")
 
 df = pd.read_csv(IN_PATH)
 
-# Problematische StationsIDs
+# Problematische StationsIDs 
 bad_ids = [-1, 29111804, 556920840, 95252421, 378595862]
 
 # Fahrten entfernen, bei denen Start oder Ziel eine problematische ID hat
@@ -73,3 +73,33 @@ mehrere_ids = coords_to_ids[coords_to_ids["n_ids"] > 1].copy()
 
 print("Koordinaten mit mehreren Stations-IDs:")
 print(mehrere_ids[["lat", "lon", "n_ids", "id"]].to_string(index=False))
+
+# Routen an bad IDs zählen + Stationsnamen ausgeben
+
+if bad_ids:
+    rows = []
+
+    for bid in bad_ids:
+        start_count = int((df["AusleihstationID"] == bid).sum())
+        end_count = int((df["RueckgabestationID"] == bid).sum())
+        total_count = start_count + end_count
+
+        start_names = df.loc[df["AusleihstationID"] == bid, "AusleihstationName"].dropna().unique().tolist()
+        end_names = df.loc[df["RueckgabestationID"] == bid, "RueckgabestationName"].dropna().unique().tolist()
+
+        names = sorted(set(start_names + end_names))
+
+        rows.append({
+            "bad_id": bid,
+            "start_count": start_count,
+            "end_count": end_count,
+            "total_count": total_count,
+            "stationsnamen": names
+        })
+
+    bad_id_summary = pd.DataFrame(rows).sort_values("total_count", ascending=False)
+
+    print("\nRouten mit problematischen Stations-IDs:")
+    print(bad_id_summary.to_string(index=False))
+else:
+    print("\nKeine bad_ids gesetzt.")
