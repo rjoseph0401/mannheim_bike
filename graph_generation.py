@@ -10,8 +10,8 @@ import numpy as np
 # -----------------------
 # Dateien
 # -----------------------
-CSV_FILE = "GraphhopperRoutes with coords and stations.csv"
-GEOJSON_FILE = "all_routes_graphhopper_local.geojson"
+CSV_FILE = "routes_graphhopper.csv"
+GEOJSON_FILE = "outputs/all_routes_graphhopper_local.geojson"
 
 # -----------------------
 # CSV laden + Route parse
@@ -44,13 +44,21 @@ df_routes["route_key"] = df_routes["route_als_liste"].apply(
 )
 gdf_counts["route_key"] = gdf_counts["geometry"].apply(lambda g: route_key_from_linestring(g))
 
-counts_by_key = gdf_counts.groupby("route_key")["count"].max()
-df_routes["count"] = df_routes["route_key"].map(counts_by_key)
+# Falls count schon in der CSV vorhanden ist, verwende diesen direkt.
+# Falls nicht, versuche count über die GeoJSON zu mappen.
+if "count" in df_routes.columns:
+    df_routes["count"] = pd.to_numeric(df_routes["count"], errors="coerce").fillna(1).astype(int)
+    missing = int(df_routes.loc[routes.index, "count"].isna().sum()) if len(routes) > 0 else 0
+    print(f"Counts aus CSV verwendet.")
+else:
+    counts_by_key = gdf_counts.groupby("route_key")["count"].max()
+    df_routes["count"] = df_routes["route_key"].map(counts_by_key)
 
-missing = int(df_routes.loc[routes.index, "count"].isna().sum())
-print(f"Counts nicht gematcht (werden als 1 gesetzt): {missing}")
+    missing = int(df_routes.loc[routes.index, "count"].isna().sum())
+    print(f"Counts nicht gematcht (werden als 1 gesetzt): {missing}")
 
-df_routes["count"] = df_routes["count"].fillna(1).astype(int)
+    df_routes["count"] = df_routes["count"].fillna(1).astype(int)
+
 counts_for_routes = df_routes.loc[routes.index, "count"].tolist()
 
 # -----------------------
@@ -135,15 +143,14 @@ if hits:
 # -----------------------
 if hits:
     vmax = max(hits.values())
-    
 
     vals = np.array(list(hits.values()))
-    vmin = max(1, int(np.percentile(vals, 5)))   # hebt den unteren Bereich an (optional, aber hilft)
-    vmax = int(np.percentile(vals, 99.5))        # dämpft Ausreißer (optional)
+    vmin = max(1, int(np.percentile(vals, 5)))
+    vmax = int(np.percentile(vals, 99.5))
     vmax = max(vmax, vmin + 1)
 
     norm = colors.LogNorm(vmin=vmin, vmax=vmax)
-    cmap = cm.get_cmap("turbo")  # geht bis blau/purple am oberen Ende
+    cmap = cm.get_cmap("turbo")
 
     for (u, v, k), n in hits.items():
         geom = edges.loc[(u, v, k)].geometry
