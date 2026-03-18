@@ -104,7 +104,7 @@ print("nearest_edges abgeschlossen.")
 # -----------------------
 fig, ax = ox.plot_graph(
     G,
-    node_size=4,
+    node_size=0,
     node_color="limegreen",
     edge_color="gray",
     edge_linewidth=0.4,
