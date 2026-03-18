@@ -1,11 +1,37 @@
 # virtual environments
+
 venv/
 .venv/
 
 # python cache
-__pycache__/
+
+**pycache**/
 *.pyc
+*.pyo
+*.pyd
+*.pyc.*
+
+# pytest / tooling cache
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# build / distribution
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# environment / local config
+
+.env
+.env.*
 
 # system files
+
 .DS_Store
 Thumbs.db

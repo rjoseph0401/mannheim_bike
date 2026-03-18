@@ -253,7 +253,7 @@ docker run --rm -p 8989:8989 -p 8990:8990 `
   -v C:\gh_local\data:/data `
   --entrypoint /bin/bash `
   israelhikingmap/graphhopper:latest `
-  -lc "java -Ddw.graphhopper.datareader.file=/data/region.osm.pbf -Ddw.graphhopper.graph.location=/data/graph-cache -jar *.jar server /data/config.yml"
+  -lc "java -Ddw.graphhopper.datareader.file=/data/planet_8.177,49.324_8.825,49.618.osm.pbf -Ddw.graphhopper.graph.location=/data/graph-cache -jar *.jar server /data/config.yml"
 
 Code für Powershell, um Docker Umgebung zu beenden:
 docker stop $(docker ps -q)
