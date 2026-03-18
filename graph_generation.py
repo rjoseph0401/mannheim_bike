@@ -14,6 +14,17 @@ CSV_FILE = "routes_graphhopper.csv"
 GEOJSON_FILE = "outputs/all_routes_graphhopper_local.geojson"
 
 # -----------------------
+# Darstellungsmodus
+# -----------------------
+# "percentile" = wie bisher mit vmin/vmax aus Perzentilen
+# "share"      = Kantenwert / Gesamtwert aller Routen
+SCALE_MODE = "share"
+
+# nur für percentile-Modus
+PCTL_MIN = 5
+PCTL_MAX = 99.5
+
+# -----------------------
 # CSV laden + Route parse
 # -----------------------
 df_routes = pd.read_csv(CSV_FILE)
@@ -32,11 +43,9 @@ gdf_counts = gpd.read_file(GEOJSON_FILE)
 gdf_counts = gdf_counts.dropna(subset=["geometry"]).copy()
 
 def route_key_from_csv_list(route, nd=6):
-    # route: [(lon,lat), ...]
     return tuple((round(lon, nd), round(lat, nd)) for lon, lat in route)
 
 def route_key_from_linestring(geom, nd=6):
-    # geom: shapely LineString
     return tuple((round(x, nd), round(y, nd)) for x, y in geom.coords)
 
 df_routes["route_key"] = df_routes["route_als_liste"].apply(
@@ -44,19 +53,14 @@ df_routes["route_key"] = df_routes["route_als_liste"].apply(
 )
 gdf_counts["route_key"] = gdf_counts["geometry"].apply(lambda g: route_key_from_linestring(g))
 
-# Falls count schon in der CSV vorhanden ist, verwende diesen direkt.
-# Falls nicht, versuche count über die GeoJSON zu mappen.
 if "count" in df_routes.columns:
     df_routes["count"] = pd.to_numeric(df_routes["count"], errors="coerce").fillna(1).astype(int)
-    missing = int(df_routes.loc[routes.index, "count"].isna().sum()) if len(routes) > 0 else 0
-    print(f"Counts aus CSV verwendet.")
+    print("Counts aus CSV verwendet.")
 else:
     counts_by_key = gdf_counts.groupby("route_key")["count"].max()
     df_routes["count"] = df_routes["route_key"].map(counts_by_key)
-
     missing = int(df_routes.loc[routes.index, "count"].isna().sum())
     print(f"Counts nicht gematcht (werden als 1 gesetzt): {missing}")
-
     df_routes["count"] = df_routes["count"].fillna(1).astype(int)
 
 counts_for_routes = df_routes.loc[routes.index, "count"].tolist()
@@ -74,13 +78,13 @@ else:
 edges = ox.graph_to_gdfs(G, nodes=False, edges=True).copy()
 
 # -----------------------
-# Segment-Mittelpunkte berechnen (mit Fortschritt)
+# Segment-Mittelpunkte berechnen
 # -----------------------
 all_x, all_y, route_ids = [], [], []
 total_routes = len(routes)
 
 for idx, route in enumerate(routes):
-    if idx % 100 == 0:
+    if idx % 100 == 0 and total_routes > 0:
         print(f"Verarbeite Routen: {idx}/{total_routes} ({idx/total_routes:.1%})", end="\r")
 
     for i in range(len(route) - 1):
@@ -105,7 +109,7 @@ print("nearest_edges abgeschlossen.")
 fig, ax = ox.plot_graph(
     G,
     node_size=0,
-    node_color="limegreen",
+    node_color="none",
     edge_color="gray",
     edge_linewidth=0.4,
     bgcolor="white",
@@ -115,7 +119,7 @@ fig, ax = ox.plot_graph(
 )
 
 # -----------------------
-# Hits zählen (GEWICHTET mit count) + Fortschritt
+# Hits zählen (gewichtet mit count)
 # -----------------------
 hits = {}
 seen = set()
@@ -139,27 +143,58 @@ if hits:
     print(f"Hit-Range (gewichtet): min={min(hits.values())}, max={max(hits.values())}")
 
 # -----------------------
-# Heatmap zeichnen
+# Werte für Plot vorbereiten
 # -----------------------
 if hits:
-    vmax = max(hits.values())
+    if SCALE_MODE == "percentile":
+        plot_hits = {edge: float(val) for edge, val in hits.items()}
+        vals = np.array(list(plot_hits.values()), dtype=float)
 
-    vals = np.array(list(hits.values()))
-    vmin = max(1, int(np.percentile(vals, 5)))
-    vmax = int(np.percentile(vals, 99.5))
-    vmax = max(vmax, vmin + 1)
+        vmin = max(1.0, float(np.percentile(vals, PCTL_MIN)))
+        vmax = float(np.percentile(vals, PCTL_MAX))
+        vmax = max(vmax, vmin + 1.0)
 
-    norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+        norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+        cbar_label = f"Gewichtete Häufigkeit (Summe count), Skala: P{PCTL_MIN}–P{PCTL_MAX}"
+
+    elif SCALE_MODE == "share":
+        total_weight = float(sum(hits.values()))
+        plot_hits = {edge: float(val) / total_weight for edge, val in hits.items()}
+        vals = np.array(list(plot_hits.values()), dtype=float)
+
+        positive_vals = vals[vals > 0]
+        vmin = float(positive_vals.min())
+        vmax = float(positive_vals.max())
+
+        if vmax <= vmin:
+            vmax = vmin * 1.01
+
+        norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+        cbar_label = "Anteil an Gesamtgewicht (Kante / Summe aller count)"
+
+        print(f"Gesamtgewicht aller Routen: {total_weight:,.0f}")
+        print(f"Share-Range: min={vmin:.8f}, max={vmax:.8f}")
+
+    else:
+        raise ValueError("SCALE_MODE muss 'percentile' oder 'share' sein.")
+
     cmap = cm.get_cmap("turbo")
 
-    for (u, v, k), n in hits.items():
+    # Für Linienbreite weiter absolute Hits verwenden, damit sichtbarer
+    vmax_width = max(hits.values())
+
+    for (u, v, k), plot_value in plot_hits.items():
         geom = edges.loc[(u, v, k)].geometry
         line_list = [geom] if geom.geom_type == "LineString" else geom.geoms
+
+        n_abs = hits[(u, v, k)]
+        width_value = min(n_abs, vmax_width)
+
         for line in line_list:
             ax.plot(
                 *line.xy,
-                color=cmap(norm(n)),
-                linewidth=1.5 + 2.5 * n / vmax,
+                color=cmap(norm(plot_value)),
+                linewidth=1.5 + 2.5 * width_value / vmax_width,
                 alpha=0.9,
             )
 
@@ -169,11 +204,17 @@ if hits:
         fraction=0.03,
         pad=0.01,
     )
-    cbar.set_label("Gewichtete Häufigkeit (Summe count)")
+    cbar.set_label(cbar_label)
 
-ax.set_title("Graphhopper-Routen (gewichtet nach Häufigkeit) als Heatmap auf Mannheim Graph")
+# -----------------------
+# Titel + Speichern
+# -----------------------
+if SCALE_MODE == "percentile":
+    ax.set_title("Graphhopper-Routen als Heatmap auf Mannheim Graph (Perzentil-Skalierung)")
+else:
+    ax.set_title("Graphhopper-Routen als Heatmap auf Mannheim Graph (Anteil an Gesamtrouten)")
 
-output_file = "mannheim_graphhopper_heatmap_weighted.png"
+output_file = f"mannheim_graphhopper_heatmap_{SCALE_MODE}.png"
 fig.savefig(output_file, dpi=300, bbox_inches="tight")
 print("Bild gespeichert als:", output_file)
 
