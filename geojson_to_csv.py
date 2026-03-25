@@ -2,8 +2,13 @@ import json
 import pandas as pd
 from pathlib import Path
 
-IN_GEOJSON = Path("outputs/all_routes_graphhopper_local.geojson")
-OUT_CSV = Path("routes_graphhopper.csv")
+DATA_DIR = Path("Data")
+
+IN_GEOJSON = DATA_DIR / "outputs" / "all_routes_graphhopper_local.geojson"
+OUT_CSV = DATA_DIR / "routes_graphhopper.csv"
+
+# Optional: sicherstellen, dass Output-Ordner existiert
+OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 
 with open(IN_GEOJSON, "r", encoding="utf-8") as f:
     data = json.load(f)
@@ -19,6 +24,10 @@ for i, feat in enumerate(data["features"]):
         continue
 
     coords = geom["coordinates"]
+
+    # Safety check (wichtig bei fehlerhaften Routen)
+    if not coords or len(coords) < 2:
+        continue
 
     start_lon, start_lat = coords[0]
     end_lon, end_lat = coords[-1]
@@ -36,6 +45,7 @@ for i, feat in enumerate(data["features"]):
 
 df = pd.DataFrame(rows)
 
-df.to_csv(OUT_CSV, index=True)
+df.to_csv(OUT_CSV, index=False)   # index=False ist hier sauberer
 
-print("CSV gespeichert:", OUT_CSV)
+print(f"CSV gespeichert: {OUT_CSV}")
+print(f"Anzahl Routen: {len(df)}")

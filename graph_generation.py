@@ -7,11 +7,15 @@ from matplotlib import cm, colors
 import geopandas as gpd
 import numpy as np
 
+from pathlib import Path
+
 # -----------------------
 # Dateien
 # -----------------------
-CSV_FILE = "routes_graphhopper.csv"
-GEOJSON_FILE = "outputs/all_routes_graphhopper_local.geojson"
+DATA_DIR = Path("Data")
+
+CSV_FILE = DATA_DIR / "routes_graphhopper.csv"
+GEOJSON_FILE = DATA_DIR / "outputs" / "all_routes_graphhopper_local.geojson"
 
 # -----------------------
 # Darstellungsmodus

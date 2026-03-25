@@ -5,15 +5,29 @@ from matplotlib import cm, colors
 import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
+from pathlib import Path
+
+# ============================================================
+# Basisverzeichnisse
+# ============================================================
+try:
+    BASE_DIR = Path(__file__).resolve().parent
+except NameError:
+    BASE_DIR = Path.cwd()
+
+DATA_DIR = BASE_DIR / "Data"
+OUT_DIR = DATA_DIR / "outputs"
 
 # ============================================================
 # Dateien
 # ============================================================
 
-GPKG_FILE = "stadtradeln_graphhopper_routes.gpkg"
+GPKG_FILE = OUT_DIR / "stadtradeln_graphhopper_routes.gpkg"
 GPKG_LAYER = "routes"
-GRAPH_FILE = Path("mannheim_bike.graphml")
-OUTPUT_FILE = "mannheim_stadtradeln_heatmap_weighted.png"
+
+GRAPH_FILE = DATA_DIR / "mannheim_bike.graphml"
+
+OUTPUT_FILE = OUT_DIR / "mannheim_stadtradeln_heatmap_weighted.png"
 
 # ============================================================
 # Parameter

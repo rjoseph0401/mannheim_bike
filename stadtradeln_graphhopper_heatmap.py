@@ -17,20 +17,39 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from shapely.geometry import LineString, Point
 
+# --------------------------------------------------
+# Basisverzeichnisse
+# --------------------------------------------------
+try:
+    BASE_DIR = Path(__file__).resolve().parent
+except NameError:
+    BASE_DIR = Path.cwd()
 
-# ============================================================
-# Konfiguration
-# ============================================================
+DATA_DIR = BASE_DIR / "Data"
+CACHE_DIR = DATA_DIR / "cache"
+OUT_DIR = DATA_DIR / "outputs"
 
-BASE_DIR = Path(__file__).resolve().parent
+# Ordner sicherstellen
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-INPUT_FILE = BASE_DIR / "stadtradeln_2024.xlsx"
-PARQUET = BASE_DIR / "cache" / "stadtradeln_2024.parquet"
-CACHE_FILE = BASE_DIR / "cache" / "stadtradeln_graphhopper_routes.json"
+# --------------------------------------------------
+# Input
+# --------------------------------------------------
+INPUT_FILE = DATA_DIR / "stadtradeln_2024.xlsx"
 
-OUT_GPKG = BASE_DIR / "stadtradeln_graphhopper_routes.gpkg"
-OUT_FAILED_GPKG = BASE_DIR / "stadtradeln_graphhopper_failed_pairs.gpkg"
-OUT_HTML = BASE_DIR / "stadtradeln_graphhopper_heatmap.html"
+# --------------------------------------------------
+# Cache
+# --------------------------------------------------
+PARQUET = CACHE_DIR / "stadtradeln_2024.parquet"
+CACHE_FILE = CACHE_DIR / "stadtradeln_graphhopper_routes.json"
+
+# --------------------------------------------------
+# Outputs
+# --------------------------------------------------
+OUT_GPKG = OUT_DIR / "stadtradeln_graphhopper_routes.gpkg"
+OUT_FAILED_GPKG = OUT_DIR / "stadtradeln_graphhopper_failed_pairs.gpkg"
+OUT_HTML = OUT_DIR / "stadtradeln_graphhopper_heatmap.html"
 
 GH_LOCAL = "http://localhost:8989"
 PROFILE = "bike"

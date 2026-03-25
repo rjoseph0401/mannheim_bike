@@ -22,9 +22,11 @@ Dadurch sieht man im GeoJSON auch die Snap-Strecken von der Station zum Netz.
 GH_LOCAL = "http://localhost:8989"
 
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT
-OUT_DIR = ROOT / "outputs"
-OUT_DIR.mkdir(exist_ok=True)
+
+DATA_DIR = ROOT / "Data"
+OUT_DIR = DATA_DIR / "outputs"
+
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Dateien laden/speichern
 IN_PATH = DATA_DIR / "od_paare_ungerichtet.csv"
