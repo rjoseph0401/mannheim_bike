@@ -16,18 +16,20 @@ from shapely.geometry import Point
 # Dateien
 # ============================================================
 
-GRAPH_FILE = Path("mannheim_bike.graphml")
+DATA_DIR = Path("Data")
 
-STADT_GPKG = "stadtradeln_graphhopper_routes.gpkg"
+GRAPH_FILE = DATA_DIR / "mannheim_bike.graphml"
+
+STADT_GPKG = DATA_DIR / "stadtradeln_graphhopper_routes.gpkg"
 STADT_LAYER = "routes"
 
-NEXT_GPKG = "nextbike_graphhopper_routes.gpkg"   # anpassen falls anders
-NEXT_LAYER = "routes"                            # anpassen falls anders
+NEXT_GPKG = DATA_DIR / "nextbike_graphhopper_routes.gpkg"
+NEXT_LAYER = "routes"
 
-OUT_STADT = "vergleich_stadtradeln_heatmap.png"
-OUT_NEXT = "vergleich_nextbike_heatmap.png"
-OUT_DIFF = "vergleich_diff_stadtradeln_minus_nextbike.png"
-OUT_CSV = "vergleich_edge_stats.csv"
+OUT_STADT = DATA_DIR / "vergleich_stadtradeln_heatmap.png"
+OUT_NEXT = DATA_DIR / "vergleich_nextbike_heatmap.png"
+OUT_DIFF = DATA_DIR / "vergleich_diff_stadtradeln_minus_nextbike.png"
+OUT_CSV = DATA_DIR / "vergleich_edge_stats.csv"
 
 # ============================================================
 # Parameter
