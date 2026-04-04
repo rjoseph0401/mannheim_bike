@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import json
 import time
 import math
+import re
+import socket
 
 import numpy as np
 import geopandas as gpd
@@ -29,29 +31,33 @@ DATA_DIR = BASE_DIR / "Data"
 CACHE_DIR = DATA_DIR / "cache"
 OUT_DIR = DATA_DIR / "outputs"
 
-# Ordner sicherstellen
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # --------------------------------------------------
 # Input
 # --------------------------------------------------
+# Zwischen 2022 / 2023 / 2024 umschalten
+# INPUT_FILE = DATA_DIR / "stadtradeln_2023.xlsx"
+# INPUT_FILE = DATA_DIR / "stadtradeln_2022.xlsx"
 INPUT_FILE = DATA_DIR / "stadtradeln_2024.xlsx"
 
 # --------------------------------------------------
-# Cache
+# Jahr / Dateinamen dynamisch ableiten
 # --------------------------------------------------
-PARQUET = CACHE_DIR / "stadtradeln_2024.parquet"
-CACHE_FILE = CACHE_DIR / "stadtradeln_graphhopper_routes.json"
+m = re.search(r"(20\d{2})", INPUT_FILE.stem)
+YEAR_TAG = m.group(1) if m else "unknown"
 
-# --------------------------------------------------
-# Outputs
-# --------------------------------------------------
-OUT_GPKG = OUT_DIR / "stadtradeln_graphhopper_routes.gpkg"
-OUT_FAILED_GPKG = OUT_DIR / "stadtradeln_graphhopper_failed_pairs.gpkg"
-OUT_HTML = OUT_DIR / "stadtradeln_graphhopper_heatmap.html"
+PARQUET = CACHE_DIR / f"stadtradeln_{YEAR_TAG}.parquet"
+CACHE_FILE = CACHE_DIR / f"stadtradeln_graphhopper_routes_{YEAR_TAG}.json"
+
+OUT_GPKG = OUT_DIR / f"stadtradeln_graphhopper_routes_{YEAR_TAG}.gpkg"
+OUT_FAILED_GPKG = OUT_DIR / f"stadtradeln_graphhopper_failed_pairs_{YEAR_TAG}.gpkg"
+OUT_HTML = OUT_DIR / f"stadtradeln_graphhopper_heatmap_{YEAR_TAG}.html"
 
 GH_LOCAL = "http://localhost:8989"
+GH_HOST = "localhost"
+GH_PORT = 8989
 PROFILE = "bike"
 
 MAX_WORKERS = 16
@@ -92,12 +98,12 @@ shown_400 = 0
 def fmt_seconds(seconds: float) -> str:
     if not np.isfinite(seconds) or seconds < 0:
         return "?"
-    m, s = divmod(int(seconds), 60)
-    h, m = divmod(m, 60)
+    m_, s = divmod(int(seconds), 60)
+    h, m_ = divmod(m_, 60)
     if h > 0:
-        return f"{h}h {m}m {s}s"
-    if m > 0:
-        return f"{m}m {s}s"
+        return f"{h}h {m_}m {s}s"
+    if m_ > 0:
+        return f"{m_}m {s}s"
     return f"{s}s"
 
 
@@ -117,6 +123,12 @@ def make_session():
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     return s
+
+
+def check_port(host="localhost", port=8989, timeout=1.0):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        return sock.connect_ex((host, port)) == 0
 
 
 def save_cache(cache, path):
@@ -271,107 +283,208 @@ def add_html_legend(fmap, vmin, vmax, cmap_name="turbo"):
     legend.add_to(fmap)
 
 
+def detect_input_format(columns):
+    c = {str(x).strip().lower() for x in columns}
+
+    fmt_utm_like = {
+        "number_of_matched_trips",
+        "x_start",
+        "y_start",
+        "x_end",
+        "y_end",
+    }
+
+    fmt_lonlat_like = {
+        "count",
+        "geometry",
+        "start_lon",
+        "start_lat",
+        "end_lon",
+        "end_lat",
+    }
+
+    if fmt_utm_like.issubset(c):
+        return "utm_like"
+
+    if fmt_lonlat_like.issubset(c):
+        return "lonlat_like"
+
+    raise ValueError(
+        "Unbekanntes Eingabeformat. Erwartet entweder:\n"
+        "- utm_like: number_of_matched_trips, x_start, y_start, x_end, y_end\n"
+        "- lonlat_like: count, geometry, start_lon, start_lat, end_lon, end_lat"
+    )
+
+
+def load_and_prepare_input(input_file, parquet_file):
+    print("[1/7] Lade und bereinige Daten ...")
+    parquet_file.parent.mkdir(exist_ok=True)
+
+    if not parquet_file.exists():
+        try:
+            raw = pd.read_excel(input_file)
+        except PermissionError as e:
+            raise PermissionError(
+                f"Kann Excel-Datei nicht lesen: {input_file}\n"
+                "Mögliche Ursachen:\n"
+                "- Datei ist noch in Excel geöffnet\n"
+                "- OneDrive synchronisiert/blockiert die Datei\n"
+                "- Datei ist nur online verfügbar\n"
+                "- fehlende Zugriffsrechte\n\n"
+                "Lösung:\n"
+                "1. Excel-Datei schließen\n"
+                "2. In OneDrive 'Immer auf diesem Gerät behalten' setzen\n"
+                "3. Datei testweise in einen lokalen Ordner wie C:\\temp kopieren\n"
+            ) from e
+
+        raw.columns = (
+            raw.columns.astype(str)
+            .str.strip()
+            .str.lower()
+            .str.replace(r"\s+", "_", regex=True)
+        )
+
+        input_format = detect_input_format(raw.columns)
+        print(f"  Erkanntes Datenformat: {input_format}")
+
+        if input_format == "utm_like":
+            for c in ["x_start", "y_start", "x_end", "y_end", "number_of_matched_trips"]:
+                raw[c] = pd.to_numeric(raw[c], errors="coerce")
+
+            raw = raw.dropna(
+                subset=["x_start", "y_start", "x_end", "y_end", "number_of_matched_trips"]
+            ).copy()
+
+            pts_s = gpd.GeoDataFrame(
+                geometry=gpd.points_from_xy(raw.x_start, raw.y_start),
+                crs="EPSG:25832"
+            ).to_crs(4326)
+
+            pts_e = gpd.GeoDataFrame(
+                geometry=gpd.points_from_xy(raw.x_end, raw.y_end),
+                crs="EPSG:25832"
+            ).to_crs(4326)
+
+            raw["slon"], raw["slat"] = pts_s.geometry.x.values, pts_s.geometry.y.values
+            raw["elon"], raw["elat"] = pts_e.geometry.x.values, pts_e.geometry.y.values
+            raw["trips"] = raw["number_of_matched_trips"].astype(int)
+            raw["input_format"] = "utm_like"
+
+        elif input_format == "lonlat_like":
+            for c in ["count", "start_lon", "start_lat", "end_lon", "end_lat"]:
+                raw[c] = pd.to_numeric(raw[c], errors="coerce")
+
+            raw = raw.dropna(
+                subset=["count", "start_lon", "start_lat", "end_lon", "end_lat"]
+            ).copy()
+
+            raw["slon"] = raw["start_lon"].astype(float)
+            raw["slat"] = raw["start_lat"].astype(float)
+            raw["elon"] = raw["end_lon"].astype(float)
+            raw["elat"] = raw["end_lat"].astype(float)
+            raw["trips"] = raw["count"].astype(int)
+            raw["input_format"] = "lonlat_like"
+
+        raw.to_parquet(parquet_file)
+        print(f"  Parquet erstellt: {parquet_file.name}")
+    else:
+        print(f"  Parquet gefunden: {parquet_file.name}")
+
+    df = pd.read_parquet(parquet_file)
+    print(f"  Zeilen im Datensatz: {len(df):,}")
+
+    if "input_format" not in df.columns:
+        raise ValueError(
+            f"Parquet {parquet_file.name} stammt offenbar aus einer älteren Skriptversion "
+            "ohne 'input_format'. Bitte Parquet löschen und neu erzeugen."
+        )
+
+    return df
+
+
+def aggregate_pairs(df):
+    print("[2/7] Aggregiere OD-Paare ...")
+
+    pairs = (
+        df.groupby(["slon", "slat", "elon", "elat"], as_index=False)["trips"]
+        .sum()
+    )
+
+    pairs = pairs[(pairs.slon != pairs.elon) | (pairs.slat != pairs.elat)].copy()
+    print(f"  Einzigartige Paare: {len(pairs):,}")
+    return pairs
+
+
+def bbox_check(df):
+    print("[3/7] Prüfe Bounding Box der Daten gegen den OSM-Extrakt ...")
+
+    all_lons = pd.concat([df["slon"], df["elon"]], ignore_index=True)
+    all_lats = pd.concat([df["slat"], df["elat"]], ignore_index=True)
+
+    print("  Daten-BBox:")
+    print(f"    Lon: {all_lons.min():.6f} bis {all_lons.max():.6f}")
+    print(f"    Lat: {all_lats.min():.6f} bis {all_lats.max():.6f}")
+
+    outside_mask = (
+        (all_lons < EXTRACT_BBOX["west"]) |
+        (all_lons > EXTRACT_BBOX["east"]) |
+        (all_lats < EXTRACT_BBOX["south"]) |
+        (all_lats > EXTRACT_BBOX["north"])
+    )
+
+    outside_count = int(outside_mask.sum())
+
+    print("  Extrakt-BBox:")
+    print(
+        f"    West={EXTRACT_BBOX['west']}, Ost={EXTRACT_BBOX['east']}, "
+        f"Süd={EXTRACT_BBOX['south']}, Nord={EXTRACT_BBOX['north']}"
+    )
+    print(f"  Punkte außerhalb des Extrakts: {outside_count:,}")
+
+    if outside_count > 0:
+        print("  WARNUNG: Mindestens ein Teil der Punkte liegt außerhalb des OSM-Extrakts.")
+
+
+def build_key(slon, slat, elon, elat):
+    return f"{slon},{slat};{elon},{elat}"
+
+
 # ============================================================
 # Daten laden
 # ============================================================
 
-print("[1/7] Lade und bereinige Daten ...")
-PARQUET.parent.mkdir(exist_ok=True)
+print(f"INPUT_FILE : {INPUT_FILE}")
+print(f"PARQUET    : {PARQUET}")
+print(f"CACHE_FILE : {CACHE_FILE}")
+print(f"OUT_GPKG   : {OUT_GPKG}")
 
-if not PARQUET.exists():
-    df = pd.read_excel(INPUT_FILE)
-    df.columns = (
-        df.columns.str.strip()
-        .str.lower()
-        .str.replace(r"\s+", "_", regex=True)
-    )
-
-    for c in ["x_start", "y_start", "x_end", "y_end", "number_of_matched_trips"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    df = df.dropna(
-        subset=["x_start", "y_start", "x_end", "y_end", "number_of_matched_trips"]
-    ).copy()
-
-    df.to_parquet(PARQUET)
-    print(f"  Parquet erstellt: {PARQUET.name}")
-else:
-    print(f"  Parquet gefunden: {PARQUET.name}")
-
-df = pd.read_parquet(PARQUET)
-print(f"  Zeilen im Datensatz: {len(df):,}")
-
+df = load_and_prepare_input(INPUT_FILE, PARQUET)
 
 # ============================================================
-# CRS / OD-Paare
+# OD-Paare
 # ============================================================
 
-print("[2/7] Transformiere Koordinaten und aggregiere OD-Paare ...")
+pairs = aggregate_pairs(df)
 
-pts_s = gpd.GeoDataFrame(
-    geometry=gpd.points_from_xy(df.x_start, df.y_start),
-    crs="EPSG:25832"
-).to_crs(4326)
-
-pts_e = gpd.GeoDataFrame(
-    geometry=gpd.points_from_xy(df.x_end, df.y_end),
-    crs="EPSG:25832"
-).to_crs(4326)
-
-df["slon"], df["slat"] = pts_s.geometry.x.values, pts_s.geometry.y.values
-df["elon"], df["elat"] = pts_e.geometry.x.values, pts_e.geometry.y.values
-
-pairs = (
-    df.groupby(["slon", "slat", "elon", "elat"], as_index=False)["number_of_matched_trips"]
-    .sum()
-)
-
-pairs = pairs[(pairs.slon != pairs.elon) | (pairs.slat != pairs.elat)].copy()
-
-trips_map = {
-    f"{r.slon},{r.slat};{r.elon},{r.elat}": int(r.number_of_matched_trips)
-    for r in pairs.itertuples()
-}
-
-print(f"  Einzigartige Paare: {len(pairs):,}")
-
+bbox_check(df)
 
 # ============================================================
-# Extrakt gegen Daten prüfen
+# Routing entscheiden
 # ============================================================
 
-print("[3/7] Prüfe Bounding Box der Daten gegen den OSM-Extrakt ...")
-
-all_lons = pd.concat([df["slon"], df["elon"]], ignore_index=True)
-all_lats = pd.concat([df["slat"], df["elat"]], ignore_index=True)
-
-print("  Daten-BBox:")
-print(f"    Lon: {all_lons.min():.6f} bis {all_lons.max():.6f}")
-print(f"    Lat: {all_lats.min():.6f} bis {all_lats.max():.6f}")
-
-outside_mask = (
-    (all_lons < EXTRACT_BBOX["west"]) |
-    (all_lons > EXTRACT_BBOX["east"]) |
-    (all_lats < EXTRACT_BBOX["south"]) |
-    (all_lats > EXTRACT_BBOX["north"])
-)
-
-outside_count = int(outside_mask.sum())
-
-print("  Extrakt-BBox:")
-print(f"    West={EXTRACT_BBOX['west']}, Ost={EXTRACT_BBOX['east']}, "
-      f"Süd={EXTRACT_BBOX['south']}, Nord={EXTRACT_BBOX['north']}")
-print(f"  Punkte außerhalb des Extrakts: {outside_count:,}")
-
-if outside_count > 0:
-    print("  WARNUNG: Mindestens ein Teil der Punkte liegt außerhalb des OSM-Extrakts.")
-
-
-# ============================================================
-# Session / Cache / Health Check
-# ============================================================
+input_format = df["input_format"].iloc[0]
+use_graphhopper = True
 
 print("[4/7] Initialisiere GraphHopper-Verbindung ...")
+print(f"  Jahr: {YEAR_TAG}")
+print(f"  input_format: {input_format}")
+print(f"  GraphHopper-Routing aktiv: {use_graphhopper}")
+
+if not check_port(GH_HOST, GH_PORT):
+    raise RuntimeError(
+        f"GraphHopper läuft nicht auf {GH_HOST}:{GH_PORT}.\n"
+        "Docker-Container starten und Port-Mapping prüfen, z. B. -p 8989:8989."
+    )
 
 session = make_session()
 
@@ -390,7 +503,7 @@ todo = []
 todo_reason_counts = {}
 
 for r in pairs.itertuples():
-    key = f"{r.slon},{r.slat};{r.elon},{r.elat}"
+    key = build_key(r.slon, r.slat, r.elon, r.elat)
     cached = cache.get(key)
 
     if cached is None:
@@ -444,7 +557,6 @@ if todo:
         print(f"  Erstes OD-Paar routbar (attempt={test_result['attempt']})")
 else:
     print("  Keine neuen Routen zu berechnen.")
-
 
 # ============================================================
 # Routing
@@ -555,10 +667,8 @@ if todo:
     print("  Routing abgeschlossen.")
     print(f"  Statusverteilung neuer Lauf: {status_counts}")
     print(f"  Attempt-Verteilung neuer Lauf: {attempt_counts}")
-
 else:
     save_cache(cache, CACHE_FILE)
-
 
 # ============================================================
 # Geo-Objekte aus Cache aufbauen
@@ -570,14 +680,14 @@ route_rows = []
 failed_rows = []
 
 for r in pairs.itertuples():
-    key = f"{r.slon},{r.slat};{r.elon},{r.elat}"
+    key = build_key(r.slon, r.slat, r.elon, r.elat)
     result = normalize_cached_result(cache.get(key))
 
     status = result["status"]
     coords = result.get("coords")
     attempt = result.get("attempt")
     detail = result.get("detail")
-    trips = int(r.number_of_matched_trips)
+    trips = int(r.trips)
 
     if coords:
         coords = simplify_coords(coords, SIMPLIFY_TOLERANCE)
@@ -630,7 +740,6 @@ for r in pairs.itertuples():
 
 print(f"  Erfolgreiche Routen für Export: {len(route_rows):,}")
 print(f"  Fehlgeschlagene Paare für Export: {len(failed_rows):,}")
-
 
 # -------------------------------------------------------
 # [6/7] Schreibe GeoPackage für QGIS
@@ -689,7 +798,6 @@ if failed_rows:
 else:
     print("  Keine fehlgeschlagenen Routen vorhanden.")
 
-
 print("[7/7] Erzeuge optionale HTML-Vorschau ...")
 
 if WRITE_HTML_PREVIEW and len(gdf_routes) > 0:
@@ -728,7 +836,6 @@ if WRITE_HTML_PREVIEW and len(gdf_routes) > 0:
 
     add_html_legend(m, vmin=vmin, vmax=vmax, cmap_name="turbo")
 
-    # Zusätzliche Tick-Werte auf der bestehenden Legende setzen
     log_min = math.log10(vmin)
     log_max = math.log10(vmax)
 
