@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 import geopandas as gpd
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
@@ -9,6 +10,8 @@ from matplotlib import colors
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 from shapely.geometry import Point, box
+
+matplotlib.rcParams["savefig.facecolor"] = "white"
 
 # ============================================================
 # Basisverzeichnisse

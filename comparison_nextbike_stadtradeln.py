@@ -1,5 +1,6 @@
 import matplotlib
 matplotlib.use("Agg")
+matplotlib.rcParams["savefig.facecolor"] = "white"
 
 import matplotlib.pyplot as plt
 plt.ioff()

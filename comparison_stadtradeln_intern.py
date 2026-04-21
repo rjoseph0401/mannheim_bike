@@ -2,11 +2,14 @@ import time
 from pathlib import Path
 
 import geopandas as gpd
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
 from matplotlib import colors
 from shapely.geometry import Point, box
+
+matplotlib.rcParams["savefig.facecolor"] = "white"
 
 # ============================================================
 # Basisverzeichnisse
@@ -27,7 +30,7 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================
 
 YEAR_A = "2022"   # wird abgezogen
-YEAR_B = "2023"   # minus YEAR_A
+YEAR_B = "2024"   # minus YEAR_A
 
 RUN_TAG = f"delta_{YEAR_B}_minus_{YEAR_A}"
 
@@ -43,7 +46,7 @@ SEGMENT_SAMPLE_STEP = 2
 SOFT_MAX_DIST = 60.0
 SOFT_K = 4
 SOFT_BANDWIDTH = 25.0
-FALLBACK_TO_NEAREST_EDGE = True
+FALLBACK_TO_NEAREST_EDGE = False
 
 # Delta-Plot
 LINEWIDTH_MIN = 0.6
@@ -443,6 +446,7 @@ fig, ax = ox.plot_graph(
     close=False,
     figsize=(14, 14),
 )
+fig.patch.set_facecolor("white")
 
 cmap = plt.get_cmap("RdBu_r")
 vmax_width = max(abs_vals)
