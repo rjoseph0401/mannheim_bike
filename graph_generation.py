@@ -101,11 +101,39 @@ for idx, route in enumerate(routes):
 print(f"Verarbeite Routen: {total_routes}/{total_routes} (100%)")
 
 # -----------------------
-# Nearest edges
+# Nearest edges + Distanzfilter
 # -----------------------
+MAX_MATCH_DIST_M = 100.0  # Punkte weiter als 100m von jeder Graphkante werden ignoriert
+
 print("Starte nearest_edges Berechnung...")
 nearest = ox.distance.nearest_edges(G, X=all_x, Y=all_y) if all_x else []
 print("nearest_edges abgeschlossen.")
+
+# Distanzen berechnen (projizierter Graph für Meter)
+print("Berechne Abstände zu nächsten Kanten...")
+G_proj = ox.project_graph(G)
+edges_proj = ox.graph_to_gdfs(G_proj, nodes=False, edges=True)
+proj_crs = edges_proj.crs
+
+from shapely.geometry import Point as ShapelyPoint
+import pyproj
+
+transformer = pyproj.Transformer.from_crs("EPSG:4326", proj_crs.to_epsg(), always_xy=True)
+proj_x, proj_y = transformer.transform(all_x, all_y)
+
+edge_geom_proj = edges_proj.geometry.to_dict()
+within_dist = []
+for i, (u, v, k) in enumerate(nearest):
+    px, py = proj_x[i], proj_y[i]
+    geom = edge_geom_proj.get((u, v, k))
+    if geom is None:
+        within_dist.append(False)
+        continue
+    dist = geom.distance(ShapelyPoint(px, py))
+    within_dist.append(dist <= MAX_MATCH_DIST_M)
+
+n_filtered = sum(1 for ok in within_dist if not ok)
+print(f"Punkte gefiltert (>{MAX_MATCH_DIST_M}m): {n_filtered:,} von {len(nearest):,}")
 
 # -----------------------
 # Plot Grundgraph
@@ -130,6 +158,8 @@ seen = set()
 total_edges = len(route_ids)
 
 for i, (rid, edge) in enumerate(zip(route_ids, nearest)):
+    if not within_dist[i]:
+        continue
     if i % 5000 == 0 and total_edges > 0:
         print(f"Matching Edges: {i}/{total_edges} ({i/total_edges:.1%})", end="\r")
 
@@ -219,7 +249,7 @@ else:
     ax.set_title("Graphhopper-Routen als Heatmap auf Mannheim Graph (Anteil an Gesamtrouten)")
 
 output_file = f"mannheim_graphhopper_heatmap_{SCALE_MODE}.png"
-fig.savefig(output_file, dpi=300, bbox_inches="tight")
+fig.savefig(output_file, dpi=300, bbox_inches="tight", facecolor="white")
 print("Bild gespeichert als:", output_file)
 
 plt.show()
