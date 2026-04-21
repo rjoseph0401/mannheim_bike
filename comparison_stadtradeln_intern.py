@@ -476,7 +476,7 @@ cbar.set_label(f"Delta Flow ({YEAR_B} - {YEAR_A})")
 
 ax.set_title(f"Delta-Map Stadtradeln: {YEAR_B} - {YEAR_A}")
 
-fig.savefig(OUTPUT_FILE, dpi=300, bbox_inches="tight")
+fig.savefig(OUTPUT_FILE, dpi=300, bbox_inches="tight", facecolor="white")
 print(f"  Gespeichert: {OUTPUT_FILE}")
 print(f"  Plot-Dauer: {fmt_seconds(time.time() - t_plot)}")
 
