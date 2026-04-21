@@ -204,7 +204,7 @@ def plot_heatmap_from_hits(hits, title, cbar_label, output_file):
     cbar.set_label(cbar_label)
 
     ax.set_title(title)
-    fig.savefig(output_file, dpi=300, bbox_inches="tight")
+    fig.savefig(output_file, dpi=300, bbox_inches="tight", facecolor="white")
     print("Bild gespeichert als:", output_file)
     plt.close(fig)
 
@@ -258,7 +258,7 @@ def plot_diff_map(diff_hits, title, output_file):
     cbar.set_label("Differenz normierter Kantenanteile (Stadtradeln - Nextbike)")
 
     ax.set_title(title)
-    fig.savefig(output_file, dpi=300, bbox_inches="tight")
+    fig.savefig(output_file, dpi=300, bbox_inches="tight", facecolor="white")
     print("Bild gespeichert als:", output_file)
     plt.close(fig)
 
