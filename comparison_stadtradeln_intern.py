@@ -29,7 +29,7 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # Konfiguration
 # ============================================================
 
-YEAR_A = "2022"   # wird abgezogen
+YEAR_A = "2023"   # wird abgezogen
 YEAR_B = "2024"   # minus YEAR_A
 
 RUN_TAG = f"delta_{YEAR_B}_minus_{YEAR_A}"
@@ -39,7 +39,7 @@ GPKG_B = OUT_DIR / f"stadtradeln_graphhopper_routes_{YEAR_B}.gpkg"
 
 GPKG_LAYER = "routes"
 GRAPH_FILE = DATA_DIR / "mannheim_bike.graphml"
-OUTPUT_FILE = RESULTS_DIR / f"{RUN_TAG}.png"
+# OUTPUT_FILE wird nach dem Plot-Abschnitt dynamisch aus SCALE_MODE gesetzt
 
 # Soft Matching wie im bisherigen Plot-Skript
 SEGMENT_SAMPLE_STEP = 2
@@ -49,9 +49,13 @@ SOFT_BANDWIDTH = 25.0
 FALLBACK_TO_NEAREST_EDGE = False
 
 # Delta-Plot
+SCALE_MODE = "share"   # "share" oder "percent_change"
+MIN_HITS = 100         # Mindestfahrten pro Kante (in beiden Jahren zusammen) für SCALE_MODE="percent_change"
+
 LINEWIDTH_MIN = 0.6
 LINEWIDTH_MAX = 3.8
-DELTA_PERCENTILE = 99.0   # für Farbskalen-Cutoff
+
+VMAX_PERCENTILE = 99.0
 
 # optionale Kalibrierung
 APPLY_CALIBRATION = True
@@ -298,28 +302,13 @@ def compute_edge_hits_for_routes(
     }
 
 
-# ============================================================
-# [1/6] Daten laden
-# ============================================================
-
 t0 = time.time()
-print("[1/6] Lade Routen ...")
-print(f"  A (wird abgezogen): {YEAR_A}")
-print(f"  B (minus A):        {YEAR_B}")
-print(f"  GPKG A: {GPKG_A}")
-print(f"  GPKG B: {GPKG_B}")
-
-gdf_A = load_routes(GPKG_A, GPKG_LAYER)
-gdf_B = load_routes(GPKG_B, GPKG_LAYER)
-
-print(f"  {YEAR_A}: {len(gdf_A):,} valide Routen")
-print(f"  {YEAR_B}: {len(gdf_B):,} valide Routen")
 
 # ============================================================
-# [2/6] Graph laden
+# [1/6] Graph laden
 # ============================================================
 
-print("[2/6] Lade / projiziere Fahrradgraph ...")
+print("[1/6] Lade / projiziere Fahrradgraph ...")
 t_graph = time.time()
 
 if GRAPH_FILE.exists():
@@ -338,61 +327,147 @@ print(f"  CRS Graph: {edges_proj.crs}")
 print(f"  Kanten im Graph: {len(edges_proj):,}")
 print(f"  Dauer: {fmt_seconds(time.time() - t_graph)}")
 
+
+def _compute_and_plot(min_hits_val):
+    if SCALE_MODE == "share":
+        total_flow = float(sum(hits_A.values()) + sum(hits_B.values()))
+        if total_flow <= 0:
+            raise ValueError("Gesamtfluss ist 0; Share-Modus nicht möglich.")
+        delta_plot = {e: d / total_flow for e, d in delta.items()}
+        plot_vals = np.array(list(delta_plot.values()), dtype=float)
+        plot_abs = np.abs(plot_vals)
+        vmax = float(np.percentile(plot_abs[np.isfinite(plot_abs)], VMAX_PERCENTILE))
+        if not np.isfinite(vmax) or vmax <= 0:
+            vmax = float(plot_abs.max())
+        cbar_label = f"Relativer Delta-Flow ({YEAR_B} - {YEAR_A}) / Gesamtfluss"
+    elif SCALE_MODE == "percent_change":
+        delta_plot = {}
+        for e, d in delta.items():
+            base = float(hits_A.get(e, 0))
+            total = float(hits_A.get(e, 0)) + float(hits_B.get(e, 0))
+            if total < min_hits_val:
+                continue
+            if base <= 0:
+                continue
+            delta_plot[e] = d / base
+        if not delta_plot:
+            raise ValueError(f"Keine Kanten übrig nach MIN_HITS={min_hits_val}-Filter.")
+        plot_vals = np.array(list(delta_plot.values()), dtype=float)
+        pos_vals = plot_vals[plot_vals > 0]
+        neg_vals = plot_vals[plot_vals < 0]
+        vmax_pos = float(np.percentile(pos_vals, VMAX_PERCENTILE)) if pos_vals.size > 0 else 1.0
+        vmax_neg = float(np.abs(np.percentile(neg_vals, 100 - VMAX_PERCENTILE))) if neg_vals.size > 0 else 1.0
+        vmax = min(vmax_pos, vmax_neg)
+        if not np.isfinite(vmax) or vmax <= 0:
+            vmax = float(np.abs(plot_vals).max())
+        n_filtered = len(delta) - len(delta_plot)
+        print(f"  MIN_HITS={min_hits_val}: {n_filtered:,} entfernt, {len(delta_plot):,} verbleiben")
+        cbar_label = f"Relative Änderung ({YEAR_B} - {YEAR_A}) / {YEAR_A} [%]"
+    if vmax <= 0:
+        raise ValueError("Alle Delta-Werte sind 0; es gibt nichts zu visualisieren.")
+
+    vmin = -vmax
+    norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+
+    print(f"  Delta-Kanten: {len(delta_plot):,} | SCALE_MODE: {SCALE_MODE} | Farbskala: ±{vmax:.6f}")
+
+    fig, ax = ox.plot_graph(
+        G_proj,
+        node_size=0,
+        node_color="none",
+        edge_color="#d9d9d9",
+        edge_linewidth=0.35,
+        bgcolor="white",
+        show=False,
+        close=False,
+        figsize=(14, 14),
+    )
+    fig.patch.set_facecolor("white")
+
+    cmap = plt.get_cmap("RdBu_r")
+    vmax_width = max(abs_vals)
+
+    for (u, v, k), d_plot in delta_plot.items():
+        geom = edge_geom.get((u, v, k))
+        if geom is None:
+            continue
+        lines = [geom] if geom.geom_type == "LineString" else list(geom.geoms)
+        d_abs = abs(delta.get((u, v, k), d_plot))
+        width = LINEWIDTH_MIN + (LINEWIDTH_MAX - LINEWIDTH_MIN) * (d_abs / vmax_width)
+        line_color = cmap(norm(d_plot))
+        for line in lines:
+            ax.plot(
+                *line.xy,
+                color=line_color,
+                linewidth=width,
+                alpha=0.92,
+                solid_capstyle="round",
+            )
+
+    cbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+        ax=ax,
+        fraction=0.03,
+        pad=0.01,
+    )
+    cbar.set_label(cbar_label)
+
+    if SCALE_MODE == "percent_change":
+        ax.set_title(f"Delta-Map Stadtradeln: {YEAR_B} - {YEAR_A}  (min_hits={min_hits_val})")
+        output_file = RESULTS_DIR / f"{RUN_TAG}_percent_change.png"
+    else:  # share
+        ax.set_title(f"Delta-Map Stadtradeln: {YEAR_B} - {YEAR_A}")
+        output_file = RESULTS_DIR / f"{RUN_TAG}_share.png"
+
+    fig.savefig(output_file, dpi=300, bbox_inches="tight", facecolor="white")
+    print(f"  Gespeichert: {output_file}")
+
+
 # ============================================================
-# [3/6] Kantenhits je Jahr berechnen
+# [2/6] Routen laden
 # ============================================================
 
-print("[3/6] Berechne Kantenhits für beide Jahre ...")
+print("[2/6] Lade Routen ...")
+print(f"  A (wird abgezogen): {YEAR_A} | B (minus A): {YEAR_B}")
 
+gdf_A = load_routes(GPKG_A, GPKG_LAYER)
+gdf_B = load_routes(GPKG_B, GPKG_LAYER)
+print(f"  {YEAR_A}: {len(gdf_A):,} valide Routen | {YEAR_B}: {len(gdf_B):,} valide Routen")
+
+# ============================================================
+# [3/6] Kantenhits berechnen
+# ============================================================
+
+print("[3/6] Berechne Kantenhits ...")
 t_hits = time.time()
 
 hits_A, stats_A = compute_edge_hits_for_routes(
-    gdf_A,
-    G_proj,
-    edges_proj,
+    gdf_A, G_proj, edges_proj,
     segment_sample_step=SEGMENT_SAMPLE_STEP,
     soft_max_dist=SOFT_MAX_DIST,
     soft_k=SOFT_K,
     soft_bandwidth=SOFT_BANDWIDTH,
     fallback_to_nearest_edge=FALLBACK_TO_NEAREST_EDGE,
 )
-
 hits_B, stats_B = compute_edge_hits_for_routes(
-    gdf_B,
-    G_proj,
-    edges_proj,
+    gdf_B, G_proj, edges_proj,
     segment_sample_step=SEGMENT_SAMPLE_STEP,
     soft_max_dist=SOFT_MAX_DIST,
     soft_k=SOFT_K,
     soft_bandwidth=SOFT_BANDWIDTH,
     fallback_to_nearest_edge=FALLBACK_TO_NEAREST_EDGE,
 )
-
-print(f"  {YEAR_A}: gematchte Kanten = {stats_A['n_matched_edges']:,}, "
-      f"Fallback-Routen = {stats_A['n_fallback_routes']:,}, "
-      f"Trips gesamt = {stats_A['total_trips']:.0f}")
-
-print(f"  {YEAR_B}: gematchte Kanten = {stats_B['n_matched_edges']:,}, "
-      f"Fallback-Routen = {stats_B['n_fallback_routes']:,}, "
-      f"Trips gesamt = {stats_B['total_trips']:.0f}")
-
-print(f"  Dauer: {fmt_seconds(time.time() - t_hits)}")
-
 if APPLY_CALIBRATION:
     hits_A = calibrate_hits(hits_A, alpha=CALIB_ALPHA, scale=CALIB_SCALE)
     hits_B = calibrate_hits(hits_B, alpha=CALIB_ALPHA, scale=CALIB_SCALE)
-    print(f"  Kalibrierung aktiv: alpha={CALIB_ALPHA}, scale={CALIB_SCALE}")
-else:
-    print("  Kalibrierung deaktiviert.")
+print(f"  Dauer: {fmt_seconds(time.time() - t_hits)}")
 
 # ============================================================
 # [4/6] Delta berechnen
 # ============================================================
 
 print("[4/6] Berechne Delta ...")
-
 all_edges = set(hits_A.keys()) | set(hits_B.keys())
-
 delta = {}
 for e in all_edges:
     a = hits_A.get(e, 0.0)
@@ -402,31 +477,11 @@ for e in all_edges:
         delta[e] = d
 
 if not delta:
-    raise ValueError(
-        "Delta ist leer. Wahrscheinlich konnten für keines der Jahre Kantenhits berechnet werden."
-    )
+    raise ValueError("Delta ist leer.")
 
 vals = np.array(list(delta.values()), dtype=float)
-abs_vals = np.abs(vals)
-abs_vals = abs_vals[np.isfinite(abs_vals)]
-
-if abs_vals.size == 0:
-    raise ValueError("Delta enthält keine endlichen Werte.")
-
-vmax = float(np.percentile(abs_vals, DELTA_PERCENTILE))
-if not np.isfinite(vmax) or vmax <= 0:
-    vmax = float(abs_vals.max())
-
-if vmax <= 0:
-    raise ValueError("Alle Delta-Werte sind 0; es gibt nichts zu visualisieren.")
-
-vmin = -vmax
-norm = colors.TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
-
-print(f"  Delta-Kanten: {len(delta):,}")
-print(f"  Delta-Min: {vals.min():.3f}")
-print(f"  Delta-Max: {vals.max():.3f}")
-print(f"  Farbskala: ±{vmax:.3f} (Perzentil {DELTA_PERCENTILE})")
+abs_vals = np.abs(vals[np.isfinite(vals)])
+print(f"  Delta-Min: {vals.min():.3f} | Delta-Max: {vals.max():.3f}")
 
 # ============================================================
 # [5/6] Plot
@@ -434,54 +489,7 @@ print(f"  Farbskala: ±{vmax:.3f} (Perzentil {DELTA_PERCENTILE})")
 
 print("[5/6] Zeichne Delta-Karte ...")
 t_plot = time.time()
-
-fig, ax = ox.plot_graph(
-    G_proj,
-    node_size=0,
-    node_color="none",
-    edge_color="#d9d9d9",
-    edge_linewidth=0.35,
-    bgcolor="white",
-    show=False,
-    close=False,
-    figsize=(14, 14),
-)
-fig.patch.set_facecolor("white")
-
-cmap = plt.get_cmap("RdBu_r")
-vmax_width = max(abs_vals)
-
-for (u, v, k), d in delta.items():
-    geom = edge_geom.get((u, v, k))
-    if geom is None:
-        continue
-
-    lines = [geom] if geom.geom_type == "LineString" else list(geom.geoms)
-
-    width = LINEWIDTH_MIN + (LINEWIDTH_MAX - LINEWIDTH_MIN) * (abs(d) / vmax_width)
-    line_color = cmap(norm(d))
-
-    for line in lines:
-        ax.plot(
-            *line.xy,
-            color=line_color,
-            linewidth=width,
-            alpha=0.92,
-            solid_capstyle="round",
-        )
-
-cbar = fig.colorbar(
-    plt.cm.ScalarMappable(norm=norm, cmap=cmap),
-    ax=ax,
-    fraction=0.03,
-    pad=0.01,
-)
-cbar.set_label(f"Delta Flow ({YEAR_B} - {YEAR_A})")
-
-ax.set_title(f"Delta-Map Stadtradeln: {YEAR_B} - {YEAR_A}")
-
-fig.savefig(OUTPUT_FILE, dpi=300, bbox_inches="tight", facecolor="white")
-print(f"  Gespeichert: {OUTPUT_FILE}")
+_compute_and_plot(MIN_HITS)
 print(f"  Plot-Dauer: {fmt_seconds(time.time() - t_plot)}")
 
 # ============================================================
