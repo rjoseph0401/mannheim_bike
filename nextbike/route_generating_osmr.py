@@ -1,11 +1,18 @@
+import os
 import pandas as pd
 import requests
 import json
+from json import JSONDecodeError
 from pathlib import Path
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+DATA_DIR = Path(__file__).resolve().parent.parent  # mannheim_bike/
 
-df_nextbike = pd.read_csv("D:\\Seminar_Fahrrad\\download\\touren_Nextbike.csv")
+# Input CSV with raw Nextbike trips. Override with env var NEXTBIKE_CSV.
+NEXTBIKE_CSV = Path(os.environ.get("NEXTBIKE_CSV", DATA_DIR.parent / "download" / "touren_Nextbike.csv"))
+
+df_nextbike = pd.read_csv(NEXTBIKE_CSV)
 nb = df_nextbike.copy()
 nb.columns = (nb.columns.astype(str).str.strip().str.lower()
               .str.replace(r"\s+", "_", regex=True)
@@ -35,18 +42,38 @@ pairs = pairs.merge(stations, left_on="end_station", right_on="station", how="le
 pairs = pairs.dropna(subset=["start_lat", "start_lon", "end_lat", "end_lon"]).copy()
 pairs = pairs[pairs["start_station"] != pairs["end_station"]].copy()
 
-cache_file = Path("route_cache_station_pairs.json")
-if cache_file.exists():
-    with cache_file.open("r", encoding="utf-8") as f:
-        route_cache = json.load(f)
-else:
-    route_cache = {}
+cache_file = DATA_DIR / "route_cache_station_pairs_bike2.json"
+
+
+def load_route_cache(path: Path):
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except JSONDecodeError as e:
+        broken_name = path.with_suffix(path.suffix + f".corrupt_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        path.replace(broken_name)
+        print(f"Warnung: Ungültige Cache-Datei erkannt ({e}).")
+        print(f"Defekte Datei wurde umbenannt zu: {broken_name}")
+        print("Neuer Cache wird leer gestartet.")
+        return {}
+
+
+def save_route_cache(path: Path, cache_dict):
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(cache_dict, f, ensure_ascii=False)
+    tmp_path.replace(path)
+
+
+route_cache = load_route_cache(cache_file)
 
 def pair_key(start_station, end_station):
     return f"{start_station}|||{end_station}"
 
 def get_route(slon, slat, elon, elat, retries=2):
-    url = f"https://routing.openstreetmap.de/routed-bike/route/v1/driving/{slon},{slat};{elon},{elat}"
+    url = f"https://routing.openstreetmap.de/routed-bike/route/v1/bike/{slon},{slat};{elon},{elat}"
     for _ in range(retries + 1):
         try:
             r = requests.get(url, params={"overview": "full", "geometries": "geojson"}, timeout=(5, 20))
@@ -64,7 +91,7 @@ for row in pairs.itertuples(index=False):
     if key not in route_cache:
         todo.append((key, row.start_lon, row.start_lat, row.end_lon, row.end_lat))
 
-max_workers = 8
+max_workers = 75
 done = 0
 if todo:
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -74,8 +101,7 @@ if todo:
             route_cache[key] = fut.result()
             done += 1
             if done % 200 == 0 or done == len(todo):
-                with cache_file.open("w", encoding="utf-8") as f:
-                    json.dump(route_cache, f, ensure_ascii=False)
+                save_route_cache(cache_file, route_cache)
                 print(f"Fortschritt: {done}/{len(todo)} neue Stationspaare")
 
 pairs["route_als_liste"] = [
@@ -91,7 +117,7 @@ df_nextbike_merged = nb.merge(
     how="left"
 ).drop(columns=["start_station", "end_station"])
 
-output_file = "df_nextbike_merged_mit_routen.csv"
+output_file = DATA_DIR / "df_nextbike_merged_mit_routen.csv"
 df_nextbike_merged.to_csv(output_file, index=False)
 
 print("Rows:", len(df_nextbike_merged))
@@ -99,4 +125,3 @@ print("Routen gefunden:", df_nextbike_merged["route_als_liste"].notna().sum())
 print("Stationspaare gesamt:", len(pairs))
 print("Cache-Datei:", str(cache_file))
 print("Gespeichert als:", output_file)
-df_nextbike_merged.head()
