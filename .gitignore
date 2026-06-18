@@ -1,0 +1,36 @@
+# Large data files (not in git)
+*.graphml
+*.csv
+*.xlsx
+*.parquet
+
+# Generated outputs
+*.png
+*.jpg
+*.html
+
+# Large or temporary caches
+route_cache_station_pairs_bike2.json
+route_cache_station_pairs_bike2.json.*
+cache/stadtradeln_osrm_routes.json
+cache/*.json
+
+# HTTP cache (requests_cache)
+*.sqlite
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Temporary files
+*.tmp
+*.corrupt*
+
+# Push-worthy caches (explicitly allowed)
+!route_cache_station_pairs.json
+!cache/nextbike_edge_hits_cache.json
+!cache/stadtradeln_2022.parquet
+!cache/stadtradeln_2023.parquet
+!cache/stadtradeln_2024.parquet
