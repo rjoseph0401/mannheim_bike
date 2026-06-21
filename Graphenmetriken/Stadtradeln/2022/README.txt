@@ -13,6 +13,8 @@ Schritt (3 Skripte statt 2).
 DATEIEN UND IHRE ROLLE IM SKRIPT-PROZESS
 ----------------------------------------------------------------
 
+!Manche Dateien sind zu groß für den Upload in das Git Repo gewesen, daher wurden diese im zip Ordner Big Files hochgeladen. Dieser muss für einen funktionierenden Code aber entpackt werden.
+
 stadtradeln_2022.xlsx
     EINGABE für Skript 1. Rohdaten der Stadtradeln-Zählungen:
     Start-/Endkoordinaten und Fahrtenanzahl je Verbindung
