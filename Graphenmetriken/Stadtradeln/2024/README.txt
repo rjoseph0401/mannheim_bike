@@ -2,6 +2,8 @@
  STADTRADELN 2024
 ================================================================
 
+! Zu große Dateien für den Git Upload wurden im zip Ordner Big files hochgeladen. Diese müssen für funktionierenden code vorliegen!
+
 Berechnet Graphmetriken (Degree, generalisierter Degree,
 Betweenness-Zentralität) für das Mannheimer Radwegenetz auf
 Basis der Stadtradeln-Zähldaten 2024. Gleiches dreistufiges
