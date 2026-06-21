@@ -1,6 +1,10 @@
 ================================================================
  NEXTBIKE - OSRM
 ================================================================
+!
+! Das Dataframe mit den Routen am Nextbike Dateaframe wurde stark komprimiert, damit es hochladbar ist, muss entpackt werden, damit nutzbar im Code
+!
+
 
 Berechnet Graphmetriken (Degree, generalisierter Degree,
 Betweenness-Zentralitaet) für das Mannheimer Radwegenetz auf
