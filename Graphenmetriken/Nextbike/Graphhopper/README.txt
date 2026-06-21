@@ -16,11 +16,11 @@ mannheim_bike.graphml
     Radwegenetz Mannheim als OSMnx-Graph (Cache). Wird von
     beiden Skripten geladen.
 
-Df_NextbikemitGraphhopperroutes.csv
+Df_NextbikemitGraphhopperroutes.csv.zip
     EINGABE für Skript 1. Nextbike-Ausleihen inkl. bereits
     berechneter Graphhopper-Route je Fahrt (Spalte
     "route_als_liste"). Das eigentliche Graphhopper-Routing
-    selbst ist nicht Teil dieses Ordners.
+    selbst ist nicht Teil dieses Ordners. Das Dataframe wurde als zip Komprimiert, um upload zu ermöglichen.
 
 routes_graphhopper.csv
     Rohe Graphhopper-Koordinaten je Ausleihe, aggregiert nach
