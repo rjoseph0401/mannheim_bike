@@ -2,6 +2,8 @@
  STADTRADELN 2023
 ================================================================
 
+! Dateien die zu groß für den Upload in das Git-Repo waren, wurden im zip Ordner big files hochgeladen, müssen für funktionierende Skripte aber im selben Ordner wie die anderen Dateien vorliegen
+
 Berechnet Graphmetriken (Degree, generalisierter Degree,
 Betweenness-Zentralität) für das Mannheimer Radwegenetz auf
 Basis der Stadtradeln-Zähldaten 2023. Aufbau und Funktionsweise
