@@ -20,12 +20,12 @@ mannheim_bike.graphml
     beiden Skripten geladen; falls nicht vorhanden, erzeugt
     Skript 1 ihn neu per OSM-Download.
 
-df_nextbike_merged_mit_routenOSRM.csv
+df_nextbike_merged_mit_routenOSRM.csv.xz
     EINGABE für Skript 1. Nextbike-Ausleihen inkl. bereits
     berechneter OSRM-Route je Fahrt (Spalte "route_als_liste",
     Liste von Koordinaten). Das eigentliche OSRM-Routing selbst
     ist nicht Teil dieses Ordners - die Datei enthält die
-    Routen bereits fertig berechnet.
+    Routen bereits fertig berechnet. Das Dataframe ist als .xz komprimiert um upload auf das git zu ermöglichen. Es  muss entpackt werden!
 
 "OSRM Grapherzeugen.py"
     SKRIPT 1. Matched Routen auf Graph-Kanten, erzeugt Heatmap,
