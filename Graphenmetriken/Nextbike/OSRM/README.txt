@@ -31,11 +31,6 @@ df_nextbike_merged_mit_routenOSRM.csv.xz
     SKRIPT 1. Matched Routen auf Graph-Kanten, erzeugt Heatmap,
     baut Adjazenzmatrix. Details siehe unten.
 
-OSRMedge_matching_cache.csv
-    ZWISCHENERGEBNIS von Skript 1. Zuordnung jeder Route zu
-    Graph-Kanten (Spalten u, v, k, route_id). Dient als Cache:
-    existiert die Datei bereits, wird das Matching beim nächsten
-    Lauf übersprungen.
 
 adjacency_matrix.npz
     ERGEBNIS von Skript 1 (sparse Adjazenzmatrix des auf
