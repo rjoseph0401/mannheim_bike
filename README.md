@@ -64,8 +64,8 @@ Die Skripte bauen aufeinander auf. Die empfohlene Reihenfolge:
 
 | Skript | Beschreibung | Erzeugt |
 |---|---|---|
-| `graph_generation.py` | Lädt OSM-Graph, projiziert Nextbike-Routen auf Kanten, berechnet Knotengrad und Betweenness-Zentralität; erzeugt Heatmap-Plots (OSRM vs. GraphHopper). | `Results/graphhopper_nextbike_heatmap_*.png`, `Data/mannheim_bike.graphml` |
-| `stadtradeln_graph_generation.py` | Analoges Skript für Stadtradeln: Knotengrad und Betweenness-Zentralität je Jahr 2022–2024. | `Results/graphhopper_stadtradeln{22,23,24}_heatmap_*.png` |
+| `graph_generation.py` | Lädt OSM-Graph, projiziert Nextbike-Routen auf Kanten (Soft-Matching, 100 m Radius), gewichtet nach Fahrtenzahl; erzeugt Heatmap-Plot (Anteil- oder Perzentil-Skala). | `mannheim_graphhopper_heatmap_{share\|percentile}.png` (Arbeitsverzeichnis) |
+| `stadtradeln_graph_generation.py` | Analoges Skript für Stadtradeln-Routen: Soft-Matching, Kalibrierung, drei Darstellungsmodi (city_classes / share / percentile). Jahrgang über `RUN_TAG` wählen. | `Results/graphhopper_stadtradeln{22,23,24}_heatmap_*.png` |
 | `stadtradeln_top_routes_map.py` | Karte der Top-15 meistgefahrenen Stadtradeln-Segmente je Jahr. | `Results/stadtradeln_top15_routen_{Jahr}.png` |
 
 ### 3. Vergleich & Validierung
@@ -93,5 +93,3 @@ Docker-Container benötigt:
 ```bash
 docker run -d -p 8989:8989 graphhopper/graphhopper
 ```
-
-
