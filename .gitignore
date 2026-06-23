@@ -5,7 +5,7 @@ venv/
 
 # python cache
 
-**pycache**/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -35,3 +35,6 @@ dist/
 
 .DS_Store
 Thumbs.db
+
+# Claude Code
+.claude/
