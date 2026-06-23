@@ -94,12 +94,4 @@ Docker-Container benötigt:
 docker run -d -p 8989:8989 graphhopper/graphhopper
 ```
 
----
 
-## Autoren & Beiträge
-
-| Autor | Branch | Schwerpunkt |
-|---|---|---|
-| Kilian Bonfert | `Branch_Kilian` | Stadtradeln-Heatmaps, Validierung (Dauerzählstellen), Transekt-Analyse, Jahres- und Differenzvergleich |
-| Radek Joseph | `Radek` | Nextbike-Routing, Netzwerkanalyse (Grad, Betweenness) |
-| Martin Broske | `Martin` | Datenvorbereitung, OD-Paar-Erzeugung, Nextbike-Datenbereinigung |
