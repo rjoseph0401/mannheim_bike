@@ -15,7 +15,7 @@ matplotlib.rcParams["savefig.facecolor"] = "white"
 # Basisverzeichnisse
 # ============================================================
 try:
-    BASE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = Path(__file__).resolve().parent.parent
 except NameError:
     BASE_DIR = Path.cwd()
 

@@ -13,7 +13,7 @@ import numpy as np
 import osmnx as ox
 
 try:
-    BASE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = Path(__file__).resolve().parent.parent
 except NameError:
     BASE_DIR = Path.cwd()
 

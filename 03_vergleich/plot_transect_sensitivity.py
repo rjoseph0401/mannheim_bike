@@ -15,9 +15,6 @@ Ablauf:
      und die Ratio (Simulation / Dauerzählung) berechnet.
   3. Die Jahres-Ratios werden gemittelt und als Kurve über die Breite geplottet.
   4. Eine gestrichelte Linie markiert den aktuell genutzten Wert (25 m).
-
-Interpretation: Flache Kurven ab einem bestimmten Wert zeigen, dass das
-Ergebnis stabil ist; starke Steigungen deuten auf Sensitivität hin.
 """
 import numpy as np
 import matplotlib.pyplot as plt
